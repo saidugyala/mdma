@@ -3,21 +3,35 @@ import prisma from '../prismaClient'; // Import Prisma client
 import { donorValidator } from '../validators/donorValidator';
 import { sendWelcomeEmail } from '../services/emailService';
 import bcrypt from 'bcryptjs';
+import { decrypt, encrypt } from '../utils/encryption';
 
 const router = Router();
 
 router.post('/', donorValidator, async (req: Request, res: Response) => {
     try {
+        const encryptedData = {
+            ...req.body,
+            contact: encrypt(req.body.contact ?? ''),
+            email: encrypt(req.body.email ?? ''),
+            addressLine1: encrypt(req.body.addressLine1 ?? ''),
+            addressLine2: req.body.addressLine2               // optional
+            ? encrypt(req.body.addressLine2)
+            : null,
+            city: encrypt(req.body.city ?? ''),
+            state: encrypt(req.body.state ?? ''),
+            zipcode: encrypt(req.body.zipcode ?? ''),
+        };
+
         const newDonor = await prisma.donor.create({
-            data: req.body,
+            data: encryptedData,
         });
         console.log('New donor created:', newDonor);
 
         // Send a welcome email asynchronously
         try {
             await sendWelcomeEmail(
-                newDonor.email,
-                `${newDonor.firstName} ${newDonor.lastName}`,
+                req.body.email,
+                `${req.body.firstName} ${req.body.lastName}`,
             );
             console.log('Welcome email sent successfully');
         } catch (emailError) {
@@ -34,7 +48,18 @@ router.post('/', donorValidator, async (req: Request, res: Response) => {
 router.get('/', async (req: Request, res: Response) => {
     try {
         const donors = await prisma.donor.findMany();
-        res.json(donors);
+        const decryptedDonors = donors.map((donor) => ({
+            ...donor,
+            contact: decrypt(donor.contact ?? ''),
+            email: decrypt(donor.email ?? ''),
+            addressLine1: decrypt(donor.addressLine1 ?? ''),
+            addressLine2: decrypt(donor.addressLine2 ?? ''),
+            city: decrypt(donor.city ?? ''),
+            state: decrypt(donor.state ?? ''),
+            zipcode: decrypt(donor.zipcode ?? ''),
+        }));
+
+        res.json(decryptedDonors);
     } catch (error) {
         console.log('Error fetching donor:', error);
         res.status(500).json({ message: 'Error fetching donors' });
